@@ -57,8 +57,9 @@ Open `http://localhost:3000`
 
 ## Stack
 
-- Next.js App Router + TypeScript
-- File-backed JSON store with lock (`data/haebom.json`) for hackathon reliability
+- Next.js App Router + TypeScript (연구자용 웹)
+- 저장: `DATABASE_URL`이 있으면 Neon Postgres 문서 한 행, 없으면 `data/haebom.json` (로컬·테스트·e2e)
+- 참가자 미니앱: `apps/haebom-participant` (Vite 정적 번들, `POST /api/participant`)
 - Deterministic AI study generator (structured JSON; optional `OPENAI_API_KEY` noted but not required)
 
 ---

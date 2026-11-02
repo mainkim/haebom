@@ -1,3 +1,4 @@
+process.env.HAEBOM_STORE = "file";
 process.env.HAEBOM_SKIP_LITERATURE = "1";
 
 /**
@@ -34,32 +35,32 @@ async function main() {
   const { study } = await createStudyFromPrompt(DEMO_PROMPT, { isDemo: true });
   assert(study.id, "study created");
 
-  applyDemoFixes(study.id);
-  submitForReview(study.id);
-  approveStudy(study.id);
-  const published = publishStudy(study.id);
+  await applyDemoFixes(study.id);
+  await submitForReview(study.id);
+  await approveStudy(study.id);
+  const published = await publishStudy(study.id);
   assert(published.study.status === "published", "published");
 
-  const runtime = joinStudy(published.joinCode, "demo");
+  const runtime = await joinStudy(published.joinCode, "demo");
   assert(runtime.stimulus, "stimulus assigned");
   assert(runtime.conditionId, "condition assigned");
 
   // Persist assignment on refresh simulation
-  const again = joinStudy(published.joinCode, "demo");
+  const again = await joinStudy(published.joinCode, "demo");
   // new join = new participant; persistent assignment is per participant
   assert(again.participantId !== runtime.participantId, "new participant each join");
 
-  let rt = recordConsent(runtime.participantId);
+  let rt = await recordConsent(runtime.participantId);
   assert(rt.currentStepId === "step_pre", "after consent -> pre");
 
-  rt = submitStep({
+  rt = await submitStep({
     participantId: runtime.participantId,
     stepId: "step_pre",
     responses: [{ measureId: "pre_q1", value: 5 }]
   });
   assert(rt.currentStepId === "step_stimulus", "to stimulus");
 
-  ingestEvents([
+  await ingestEvents([
     {
       eventId: "evt_smoke_1",
       studyId: runtime.studyId,
@@ -99,7 +100,7 @@ async function main() {
     }
   ]);
 
-  rt = submitStep({
+  rt = await submitStep({
     participantId: runtime.participantId,
     stepId: "step_stimulus",
     criteriaOpened: true,
@@ -107,7 +108,7 @@ async function main() {
     stimulusDurationMs: 2500
   });
 
-  rt = submitStep({
+  rt = await submitStep({
     participantId: runtime.participantId,
     stepId: "step_post",
     responses: [
@@ -115,28 +116,28 @@ async function main() {
       { measureId: "post_q2", value: 5 }
     ]
   });
-  rt = submitStep({
+  rt = await submitStep({
     participantId: runtime.participantId,
     stepId: "step_attention",
     responses: [{ measureId: "att_q1", value: 3 }]
   });
-  rt = submitStep({
+  rt = await submitStep({
     participantId: runtime.participantId,
     stepId: "step_manip",
     responses: [{ measureId: "manip_q1", value: "예" }]
   });
-  rt = submitStep({ participantId: runtime.participantId, stepId: "step_debrief" });
+  rt = await submitStep({ participantId: runtime.participantId, stepId: "step_debrief" });
   assert(rt.status === "completed", "session completed");
 
-  const overview = getDataOverview(study.id);
+  const overview = await getDataOverview(study.id);
   assert(overview && overview.overview.totalCompleted >= 1, "completed counted");
 
-  const timeline = getParticipantTimeline(runtime.participantId);
+  const timeline = await getParticipantTimeline(runtime.participantId);
   assert(timeline && timeline.events.some((e) => e.objectId === "criteria_button"), "click linked");
   assert(timeline && timeline.responses.some((r) => r.measureId === "post_q1"), "survey linked");
   assert(timeline.participant.id === runtime.participantId, "same participant id");
 
-  const files = buildExports(study.id);
+  const files = await buildExports(study.id);
   assert(files.participantWide.includes("participant_id"), "wide csv");
   assert(files.eventLong.includes("event_type"), "event csv");
   assert(files.codebook.includes("variable_id"), "codebook");

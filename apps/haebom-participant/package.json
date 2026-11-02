@@ -1,0 +1,24 @@
+{
+  "name": "haebom-participant",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "해봄 일반용 참가자 미니앱. 앱인토스 정적 번들.",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build && ait build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@apps-in-toss/web-framework": "^3.1.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}

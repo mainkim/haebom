@@ -14,6 +14,7 @@
     "e2e:smoke": "tsx scripts/e2e-smoke.ts"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
     "lucide-react": "^1.43.0",
     "next": "^15.1.0",
     "react": "^19.0.0",
