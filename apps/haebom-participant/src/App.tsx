@@ -258,7 +258,7 @@ export function App() {
   if (!code) {
     return (
       <main className="app">
-        <p className="brand">해봄</p>
+        <p className="brand">해봄리서치</p>
         <h1>참여 링크를 확인해 주세요</h1>
         <p className="hint">주소의 참여 코드가 없거나 형식이 맞지 않습니다.</p>
       </main>
@@ -269,7 +269,7 @@ export function App() {
 
   return (
     <main className="app">
-      <p className="brand">해봄</p>
+      <p className="brand">해봄리서치</p>
       {!view && !error ? <p className="hint">참여 준비 중</p> : null}
       {error ? (
         <p className="error" role="alert">

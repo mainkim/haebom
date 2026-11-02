@@ -41,7 +41,7 @@ beforeEach(() => {
   process.env.HAEBOM_STORE = "file";
   process.env.HAEBOM_DATA_DIR = dataDir;
   process.env.HAEBOM_SKIP_LITERATURE = "1";
-  process.env.HAEBOM_AIT_APP_NAME = "haebom";
+  process.env.HAEBOM_AIT_APP_NAME = "haebomresearch";
   delete process.env.HAEBOM_PARTICIPANT_CORS_ORIGINS;
   delete process.env.DATABASE_URL;
   resetMemoryCache();
@@ -175,22 +175,28 @@ describe("store adapter", () => {
 
 describe("participant CORS", () => {
   it("allows the default Apps in Toss origins and blocks others", () => {
-    const patterns = participantCorsPatterns({ HAEBOM_AIT_APP_NAME: "haebom" });
-    assert.equal(originAllowed("https://haebom.apps.tossmini.com", patterns, "haebom"), true);
-    assert.equal(originAllowed("https://haebom.private-apps.tossmini.com", patterns, "haebom"), true);
-    assert.equal(originAllowed("https://other.apps.tossmini.com", patterns, "haebom"), false);
-    assert.equal(originAllowed("https://evil.example", patterns, "haebom"), false);
-    assert.equal(originAllowed("https://haebom.apps.tossmini.com", patterns, undefined), false);
+    const patterns = participantCorsPatterns({ HAEBOM_AIT_APP_NAME: "haebomresearch" });
+    assert.equal(originAllowed("https://haebomresearch.apps.tossmini.com", patterns, "haebomresearch"), true);
+    assert.equal(
+      originAllowed("https://haebomresearch.private-apps.tossmini.com", patterns, "haebomresearch"),
+      true
+    );
+    assert.equal(originAllowed("https://other.apps.tossmini.com", patterns, "haebomresearch"), false);
+    assert.equal(originAllowed("https://evil.example", patterns, "haebomresearch"), false);
+    assert.equal(originAllowed("https://haebomresearch.apps.tossmini.com", patterns, undefined), false);
   });
 
   it("uses the env allowlist instead of the defaults", () => {
     const patterns = participantCorsPatterns({
       HAEBOM_PARTICIPANT_CORS_ORIGINS: "http://localhost:5173,https://*.apps.tossmini.com"
     });
-    assert.equal(originAllowed("http://localhost:5173", patterns, "haebom"), true);
-    assert.equal(originAllowed("https://demo.apps.tossmini.com", patterns, "haebom"), true);
-    assert.equal(originAllowed("https://haebom.private-apps.tossmini.com", patterns, "haebom"), false);
-    assert.equal(originAllowed("https://evil.apps.tossmini.com.attacker.test", patterns, "haebom"), false);
+    assert.equal(originAllowed("http://localhost:5173", patterns, "haebomresearch"), true);
+    assert.equal(originAllowed("https://demo.apps.tossmini.com", patterns, "haebomresearch"), true);
+    assert.equal(
+      originAllowed("https://haebomresearch.private-apps.tossmini.com", patterns, "haebomresearch"),
+      false
+    );
+    assert.equal(originAllowed("https://evil.apps.tossmini.com.attacker.test", patterns, "haebomresearch"), false);
   });
 });
 
@@ -223,11 +229,11 @@ describe("participant API", () => {
     const preflight = await handleParticipantRequest(
       new Request("https://haebom.example/api/participant", {
         method: "OPTIONS",
-        headers: { Origin: "https://haebom.apps.tossmini.com" }
+        headers: { Origin: "https://haebomresearch.apps.tossmini.com" }
       })
     );
     assert.equal(preflight.status, 204);
-    assert.equal(preflight.headers.get("access-control-allow-origin"), "https://haebom.apps.tossmini.com");
+    assert.equal(preflight.headers.get("access-control-allow-origin"), "https://haebomresearch.apps.tossmini.com");
 
     const deniedPreflight = await handleParticipantRequest(
       new Request("https://haebom.example/api/participant", {
@@ -247,10 +253,13 @@ describe("participant API", () => {
     for (let i = 0; i < 12; i++) {
       const res = await participantRequest(
         { action: "join", joinCode: published.joinCode, channel: "toss_miniapp" },
-        "https://haebom.private-apps.tossmini.com"
+        "https://haebomresearch.private-apps.tossmini.com"
       );
       assert.equal(res.status, 200);
-      assert.equal(res.headers.get("access-control-allow-origin"), "https://haebom.private-apps.tossmini.com");
+      assert.equal(
+        res.headers.get("access-control-allow-origin"),
+        "https://haebomresearch.private-apps.tossmini.com"
+      );
       const view = (await res.json()) as {
         participantId: string;
         stimulus: { body: string };
