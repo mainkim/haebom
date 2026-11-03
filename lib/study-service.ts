@@ -27,20 +27,20 @@ import type {
   SurveyResponse
 } from "./types";
 
-export function listStudies(): Study[] {
-  return withDbRead((db) => [...db.studies].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
+export async function listStudies(): Promise<Study[]> {
+  return await withDbRead((db) => [...db.studies].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
 }
 
-export function getStudy(studyId: string): Study | undefined {
-  return withDbRead((db) => db.studies.find((s) => s.id === studyId));
+export async function getStudy(studyId: string): Promise<Study | undefined> {
+  return await withDbRead((db) => db.studies.find((s) => s.id === studyId));
 }
 
-export function getVersion(versionId: string): StudyVersion | undefined {
-  return withDbRead((db) => db.versions.find((v) => v.id === versionId));
+export async function getVersion(versionId: string): Promise<StudyVersion | undefined> {
+  return await withDbRead((db) => db.versions.find((v) => v.id === versionId));
 }
 
-export function getStudyBundle(studyId: string) {
-  return withDbRead((db) => {
+export async function getStudyBundle(studyId: string) {
+  return await withDbRead((db) => {
     const study = db.studies.find((s) => s.id === studyId);
     if (!study) return null;
     const versions = db.versions.filter((v) => v.studyId === studyId).sort((a, b) => b.versionNumber - a.versionNumber);
@@ -57,7 +57,7 @@ export async function createStudyFromPrompt(prompt: string, opts?: { title?: str
   if (opts?.title) spec.title = opts.title;
   await enrichDraftWithLiterature(spec, prompt, { expand: false, searchLimit: 6, timeoutMs: 10_000 });
 
-  return withDb((db) => {
+  return await withDb((db) => {
     const studyId = newId("stu");
     const versionId = newId("ver");
     const now = nowIso();
@@ -90,8 +90,8 @@ export async function createStudyFromPrompt(prompt: string, opts?: { title?: str
   });
 }
 
-export function updateDraftSpec(studyId: string, mutator: (spec: StudyDraftSpec) => StudyDraftSpec) {
-  return withDb((db) => {
+export async function updateDraftSpec(studyId: string, mutator: (spec: StudyDraftSpec) => StudyDraftSpec) {
+  return await withDb((db) => {
     const study = db.studies.find((s) => s.id === studyId);
     if (!study) throw new Error("Study not found");
     const version = db.versions.find((v) => v.id === study.latestDraftVersionId);
@@ -108,8 +108,8 @@ export function updateDraftSpec(studyId: string, mutator: (spec: StudyDraftSpec)
   });
 }
 
-export function submitForReview(studyId: string) {
-  return withDb((db) => {
+export async function submitForReview(studyId: string) {
+  return await withDb((db) => {
     const study = db.studies.find((s) => s.id === studyId);
     if (!study?.latestDraftVersionId) throw new Error("No draft");
     const version = db.versions.find((v) => v.id === study.latestDraftVersionId)!;
@@ -125,7 +125,7 @@ export function submitForReview(studyId: string) {
   });
 }
 
-export function applyDemoFixes(studyId: string) {
+export async function applyDemoFixes(studyId: string) {
   return updateDraftSpec(studyId, (spec) => {
     let next = addMissingRecommendationSelect(spec);
     next = harmonizeCtaLabels(next);
@@ -133,7 +133,7 @@ export function applyDemoFixes(studyId: string) {
   });
 }
 
-export function addStudySource(
+export async function addStudySource(
   studyId: string,
   input: {
     title: string;
@@ -153,7 +153,7 @@ export function addStudySource(
   });
 }
 
-export function removeStudySource(studyId: string, sourceId: string) {
+export async function removeStudySource(studyId: string, sourceId: string) {
   return updateDraftSpec(studyId, (spec) => {
     const library = ensureSourceLibrary(spec);
     library.documents = library.documents.filter((d) => d.id !== sourceId);
@@ -165,7 +165,7 @@ export function removeStudySource(studyId: string, sourceId: string) {
   });
 }
 
-export function linkStudySources(
+export async function linkStudySources(
   studyId: string,
   fromSourceId: string,
   toSourceId: string,
@@ -182,8 +182,8 @@ export function linkStudySources(
   });
 }
 
-export function getStudyLineage(studyId: string) {
-  return withDbRead((db) => {
+export async function getStudyLineage(studyId: string) {
+  return await withDbRead((db) => {
     const study = db.studies.find((s) => s.id === studyId);
     if (!study) return null;
     const version =
@@ -198,8 +198,8 @@ export function getStudyLineage(studyId: string) {
   });
 }
 
-export function previewGroundedStimuli(studyId: string, query?: string) {
-  return withDbRead((db) => {
+export async function previewGroundedStimuli(studyId: string, query?: string) {
+  return await withDbRead((db) => {
     const study = db.studies.find((s) => s.id === studyId);
     if (!study?.latestDraftVersionId) throw new Error("No draft");
     const version = db.versions.find((v) => v.id === study.latestDraftVersionId)!;
@@ -207,7 +207,7 @@ export function previewGroundedStimuli(studyId: string, query?: string) {
   });
 }
 
-export function applyGroundedStimuli(studyId: string, query?: string) {
+export async function applyGroundedStimuli(studyId: string, query?: string) {
   return updateDraftSpec(studyId, (spec) => {
     const preview = recommendGroundedStimuli(spec, query);
     if (!preview.suggestions.length) {
@@ -217,7 +217,7 @@ export function applyGroundedStimuli(studyId: string, query?: string) {
   });
 }
 
-export function seedSourceLibrary(studyId: string) {
+export async function seedSourceLibrary(studyId: string) {
   return updateDraftSpec(studyId, (spec) => {
     spec.sourceLibrary = seedDemoSourceLibrary();
     return spec;
@@ -243,7 +243,7 @@ export async function expandStudyLineageFromDoi(
   doi: string,
   opts?: { refLimit?: number; citeLimit?: number; similarLimit?: number }
 ) {
-  const snapshot = withDbRead((db) => {
+  const snapshot = await withDbRead((db) => {
     const study = db.studies.find((s) => s.id === studyId);
     if (!study) throw new Error("Study not found");
     const version = db.versions.find((v) => v.id === study.latestDraftVersionId);
@@ -255,7 +255,7 @@ export async function expandStudyLineageFromDoi(
   });
 
   const expanded = await expandLineageFromDoi(snapshot, doi, opts);
-  const { study, version } = updateDraftSpec(studyId, (spec) => {
+  const { study, version } = await updateDraftSpec(studyId, (spec) => {
     spec.sourceLibrary = expanded.library;
     return spec;
   });
@@ -277,7 +277,7 @@ export async function searchStudyLiterature(studyId: string, query: string) {
   const q = query.trim();
   if (!q) throw new Error("검색어를 입력해 주세요.");
   const works = await searchOpenAlexWorks(q, 8);
-  const { study, version } = updateDraftSpec(studyId, (spec) => {
+  const { study, version } = await updateDraftSpec(studyId, (spec) => {
     const library = ensureSourceLibrary(spec);
     const added = mergeWorksIntoLibrary(library, works);
     spec.aiMeta = {
@@ -309,7 +309,7 @@ export async function searchStudyLiterature(studyId: string, query: string) {
 
 /** Re-run OpenAlex + RAG tools on an existing draft */
 export async function runStudyLiteratureCopilot(studyId: string, query?: string) {
-  const snapshot = withDbRead((db) => {
+  const snapshot = await withDbRead((db) => {
     const study = db.studies.find((s) => s.id === studyId);
     if (!study) throw new Error("Study not found");
     const version = db.versions.find((v) => v.id === study.latestDraftVersionId);
@@ -321,7 +321,7 @@ export async function runStudyLiteratureCopilot(studyId: string, query?: string)
   });
   const prompt = query?.trim() || snapshot.aiMeta?.sourcePrompt || snapshot.researchQuestion;
   await enrichDraftWithLiterature(snapshot, prompt, { expand: true, searchLimit: 6, timeoutMs: 12_000 });
-  const { study, version } = updateDraftSpec(studyId, () => snapshot);
+  const { study, version } = await updateDraftSpec(studyId, () => snapshot);
   return {
     study,
     version,
@@ -330,8 +330,8 @@ export async function runStudyLiteratureCopilot(studyId: string, query?: string)
   };
 }
 
-export function approveStudy(studyId: string, opts?: { forceClearBlockers?: boolean }) {
-  return withDb((db) => {
+export async function approveStudy(studyId: string, opts?: { forceClearBlockers?: boolean }) {
+  return await withDb((db) => {
     const study = db.studies.find((s) => s.id === studyId);
     if (!study?.latestDraftVersionId) throw new Error("No draft");
     const version = db.versions.find((v) => v.id === study.latestDraftVersionId)!;
@@ -357,8 +357,8 @@ export function approveStudy(studyId: string, opts?: { forceClearBlockers?: bool
   });
 }
 
-export function publishStudy(studyId: string) {
-  return withDb((db) => {
+export async function publishStudy(studyId: string) {
+  return await withDb((db) => {
     const study = db.studies.find((s) => s.id === studyId);
     if (!study?.latestDraftVersionId) throw new Error("No draft");
     const version = db.versions.find((v) => v.id === study.latestDraftVersionId)!;
@@ -377,8 +377,8 @@ export function publishStudy(studyId: string) {
 }
 
 /** Create new draft from published version for edits */
-export function createNewDraftFromPublished(studyId: string) {
-  return withDb((db) => {
+export async function createNewDraftFromPublished(studyId: string) {
+  return await withDb((db) => {
     const study = db.studies.find((s) => s.id === studyId);
     if (!study?.currentVersionId) throw new Error("No published version");
     const published = db.versions.find((v) => v.id === study.currentVersionId)!;
@@ -403,8 +403,8 @@ export function createNewDraftFromPublished(studyId: string) {
   });
 }
 
-export function joinStudy(joinCode: string, channel: "web" | "toss_miniapp" | "demo" = "web") {
-  return withDb((db) => {
+export async function joinStudy(joinCode: string, channel: "web" | "toss_miniapp" | "demo" = "web") {
+  return await withDb((db) => {
     const study = db.studies.find((s) => s.joinCode.toUpperCase() === joinCode.toUpperCase());
     if (!study) throw new Error("참여 코드를 찾을 수 없습니다.");
     if (study.status !== "published") throw new Error("아직 공개되지 않은 연구입니다.");
@@ -480,16 +480,16 @@ function buildRuntime(db: import("./types").DbShape, participantId: string): Par
   };
 }
 
-export function getRuntime(participantId: string): ParticipantRuntimePayload | null {
-  return withDbRead((db) => {
+export async function getRuntime(participantId: string): Promise<ParticipantRuntimePayload | null> {
+  return await withDbRead((db) => {
     const p = db.participants.find((x) => x.id === participantId);
     if (!p) return null;
     return buildRuntime(db, participantId);
   });
 }
 
-export function recordConsent(participantId: string) {
-  return withDb((db) => {
+export async function recordConsent(participantId: string) {
+  return await withDb((db) => {
     const session = db.sessions.find((s) => s.participantId === participantId);
     if (!session) throw new Error("Session not found");
     session.consentGiven = true;
@@ -515,7 +515,7 @@ function advanceStep(db: import("./types").DbShape, session: Session) {
   }
 }
 
-export function submitStep(params: {
+export async function submitStep(params: {
   participantId: string;
   stepId: string;
   responses?: Array<{ measureId: string; value: string | number; responseTimeMs?: number }>;
@@ -523,7 +523,7 @@ export function submitStep(params: {
   recommendationSelected?: boolean;
   stimulusDurationMs?: number;
 }) {
-  return withDb((db) => {
+  return await withDb((db) => {
     const session = db.sessions.find((s) => s.participantId === params.participantId);
     if (!session) throw new Error("Session not found");
     if (session.status !== "active") throw new Error("Session not active");
@@ -652,8 +652,8 @@ function completeSession(db: import("./types").DbShape, session: Session) {
   void hasCriteria;
 }
 
-export function ingestEvents(events: Array<Omit<ResearchEvent, "serverReceivedAt"> & { serverReceivedAt?: string }>) {
-  return withDb((db) => {
+export async function ingestEvents(events: Array<Omit<ResearchEvent, "serverReceivedAt"> & { serverReceivedAt?: string }>) {
+  return await withDb((db) => {
     let accepted = 0;
     let duplicates = 0;
     for (const ev of events) {
@@ -680,8 +680,8 @@ export function ingestEvents(events: Array<Omit<ResearchEvent, "serverReceivedAt
   });
 }
 
-export function getDataOverview(studyId: string) {
-  return withDbRead((db) => {
+export async function getDataOverview(studyId: string) {
+  return await withDbRead((db) => {
     const study = db.studies.find((s) => s.id === studyId);
     if (!study) return null;
     const version = db.versions.find((v) => v.id === study.currentVersionId) ?? db.versions.find((v) => v.studyId === studyId);
@@ -723,8 +723,8 @@ export function getDataOverview(studyId: string) {
   });
 }
 
-export function getParticipantTimeline(participantId: string) {
-  return withDbRead((db) => {
+export async function getParticipantTimeline(participantId: string) {
+  return await withDbRead((db) => {
     const participant = db.participants.find((p) => p.id === participantId);
     if (!participant) return null;
     const session = db.sessions.find((s) => s.id === participant.sessionId);
@@ -755,7 +755,7 @@ export function getParticipantTimeline(participantId: string) {
 
 export async function seedDemoStudy() {
   // Reset demo studies then create fresh published demo
-  withDb((db) => {
+  await withDb((db) => {
     const demoIds = new Set(db.studies.filter((s) => s.isDemo).map((s) => s.id));
     db.studies = db.studies.filter((s) => !s.isDemo);
     db.versions = db.versions.filter((v) => !demoIds.has(v.studyId));
@@ -783,25 +783,25 @@ export async function seedDemoStudy() {
   });
 
   const { study } = await createStudyFromPrompt(DEMO_PROMPT, { isDemo: true, targetN: 80 });
-  seedSourceLibrary(study.id);
-  applyDemoFixes(study.id);
+  await seedSourceLibrary(study.id);
+  await applyDemoFixes(study.id);
   try {
-    applyGroundedStimuli(study.id);
+    await applyGroundedStimuli(study.id);
   } catch {
     /* corpus seed may still leave QA demo quirks; ignore grounding miss */
   }
-  submitForReview(study.id);
-  approveStudy(study.id);
-  const published = publishStudy(study.id);
+  await submitForReview(study.id);
+  await approveStudy(study.id);
+  const published = await publishStudy(study.id);
   return published;
 }
 
-export function findStudyByJoinCode(code: string) {
-  return withDbRead((db) => db.studies.find((s) => s.joinCode.toUpperCase() === code.toUpperCase()));
+export async function findStudyByJoinCode(code: string) {
+  return await withDbRead((db) => db.studies.find((s) => s.joinCode.toUpperCase() === code.toUpperCase()));
 }
 
-export function duplicateStudy(studyId: string) {
-  return withDb((db) => {
+export async function duplicateStudy(studyId: string) {
+  return await withDb((db) => {
     const source = db.studies.find((s) => s.id === studyId);
     if (!source) throw new Error("Study not found");
     const sourceVersion =

@@ -28,8 +28,8 @@ function getStudyVersion(db: DbShape, studyId: string) {
   return { study, version };
 }
 
-export function buildExports(studyId: string) {
-  return withDbRead((db) => {
+export async function buildExports(studyId: string) {
+  return await withDbRead((db) => {
     const { study, version } = getStudyVersion(db, studyId);
     return {
       participantWide: toCsv(buildParticipantWide(db, study, version)),
@@ -40,8 +40,8 @@ export function buildExports(studyId: string) {
 }
 
 /** XLSX workbook as base64 for download */
-export function buildXlsxBase64(studyId: string) {
-  return withDbRead((db) => {
+export async function buildXlsxBase64(studyId: string) {
+  return await withDbRead((db) => {
     const { study, version } = getStudyVersion(db, studyId);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(

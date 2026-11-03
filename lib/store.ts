@@ -10,16 +10,12 @@ import {
 } from "fs";
 import path from "path";
 import type { DbShape } from "./types";
+import { emptyDb, nowIso } from "./store-shape";
+import { mutateHaebomDocument, neonDocumentDb, readHaebomDocument } from "./store-postgres";
+
+export { emptyDb, nowIso };
 
 const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-
-/** On Vercel the deployment FS is read-only; use /tmp (+ in-memory) instead. */
-const DATA_DIR = IS_SERVERLESS
-  ? path.join("/tmp", "haebom-data")
-  : path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "haebom.json");
-const LOCK_PATH = path.join(DATA_DIR, "haebom.lock");
-const STALE_LOCK_MS = 5_000;
 
 type GlobalDb = typeof globalThis & {
   __haebomDb?: DbShape;
@@ -29,30 +25,40 @@ function g(): GlobalDb {
   return globalThis as GlobalDb;
 }
 
-export function emptyDb(): DbShape {
-  return {
-    meta: {
-      app: "haebom",
-      schemaVersion: 1,
-      demoMode: true,
-      updatedAt: new Date().toISOString()
-    },
-    studies: [],
-    versions: [],
-    participants: [],
-    sessions: [],
-    assignments: [],
-    consents: [],
-    surveyResponses: [],
-    events: [],
-    stimulusExposures: [],
-    qualityFlags: [],
-    eventIdIndex: {}
-  };
+export type StoreBackend = "file" | "postgres";
+
+/**
+ * Postgres when DATABASE_URL is set (Neon connection string from the Vercel integration).
+ * HAEBOM_STORE=file forces the local JSON file even if a URL is present, so tests and
+ * the headless demo never touch a remote database.
+ */
+export function storeBackend(): StoreBackend {
+  if (process.env.HAEBOM_STORE === "file") return "file";
+  if (process.env.DATABASE_URL && process.env.DATABASE_URL.trim()) return "postgres";
+  return "file";
 }
 
+function dataDir(): string {
+  if (process.env.HAEBOM_DATA_DIR && process.env.HAEBOM_DATA_DIR.trim()) {
+    return process.env.HAEBOM_DATA_DIR;
+  }
+  if (IS_SERVERLESS) return path.join("/tmp", "haebom-data");
+  return path.join(process.cwd(), "data");
+}
+
+function dbPath(): string {
+  return path.join(dataDir(), "haebom.json");
+}
+
+function lockPath(): string {
+  return path.join(dataDir(), "haebom.lock");
+}
+
+const STALE_LOCK_MS = 5_000;
+
 function ensureDir() {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+  const dir = dataDir();
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
 function sleepSpin(ms: number) {
@@ -64,7 +70,7 @@ function sleepSpin(ms: number) {
 
 function isStaleLock(): boolean {
   try {
-    const age = Date.now() - statSync(LOCK_PATH).mtimeMs;
+    const age = Date.now() - statSync(lockPath()).mtimeMs;
     return age > STALE_LOCK_MS;
   } catch {
     return false;
@@ -72,7 +78,7 @@ function isStaleLock(): boolean {
 }
 
 function forceUnlock() {
-  for (const p of [LOCK_PATH, LOCK_PATH + ".tmp"]) {
+  for (const p of [lockPath(), lockPath() + ".tmp"]) {
     try {
       if (existsSync(p)) unlinkSync(p);
     } catch {
@@ -85,7 +91,7 @@ function acquireLock(retries = 80): void {
   ensureDir();
   for (let i = 0; i < retries; i++) {
     try {
-      writeFileSync(LOCK_PATH, `${process.pid}:${Date.now()}`, { flag: "wx" });
+      writeFileSync(lockPath(), `${process.pid}:${Date.now()}`, { flag: "wx" });
       return;
     } catch {
       if (isStaleLock()) {
@@ -95,11 +101,10 @@ function acquireLock(retries = 80): void {
       sleepSpin(25);
     }
   }
-  // Last resort on serverless: break and take the lock so demo stays usable
   if (IS_SERVERLESS) {
     forceUnlock();
     try {
-      writeFileSync(LOCK_PATH, `${process.pid}:${Date.now()}`, { flag: "wx" });
+      writeFileSync(lockPath(), `${process.pid}:${Date.now()}`, { flag: "wx" });
       return;
     } catch {
       /* fall through */
@@ -114,24 +119,26 @@ function releaseLock() {
 
 function loadDbFromDisk(): DbShape {
   ensureDir();
-  if (!existsSync(DB_PATH)) {
+  const file = dbPath();
+  if (!existsSync(file)) {
     const db = emptyDb();
     try {
-      writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+      writeFileSync(file, JSON.stringify(db, null, 2));
     } catch {
       /* /tmp write may fail in extreme cases; keep in-memory */
     }
     return db;
   }
-  const raw = readFileSync(DB_PATH, "utf8");
+  const raw = readFileSync(file, "utf8");
   return JSON.parse(raw) as DbShape;
 }
 
 function persistDb(db: DbShape) {
   ensureDir();
-  const tmp = DB_PATH + ".tmp";
+  const file = dbPath();
+  const tmp = file + ".tmp";
   writeFileSync(tmp, JSON.stringify(db, null, 2));
-  renameSync(tmp, DB_PATH);
+  renameSync(tmp, file);
 }
 
 function getMemoryDb(): DbShape {
@@ -146,22 +153,29 @@ function setMemoryDb(db: DbShape) {
   g().__haebomDb = db;
 }
 
-export function readDb(): DbShape {
+/** Test helper. Clears the in-process file cache so the next read hits disk. */
+export function resetMemoryCache(): void {
+  g().__haebomDb = undefined;
+}
+
+export async function readDb(): Promise<DbShape> {
+  if (storeBackend() === "postgres") {
+    const url = process.env.DATABASE_URL!.trim();
+    return readHaebomDocument(await neonDocumentDb(url));
+  }
   if (IS_SERVERLESS) {
-    // Clone so accidental mutation outside withDb doesn't leak mid-request
     return structuredClone(getMemoryDb());
   }
   return loadDbFromDisk();
 }
 
-export function withDb<T>(fn: (db: DbShape) => T): T {
+function withFileDb<T>(fn: (db: DbShape) => T): T {
   acquireLock();
   try {
     if (IS_SERVERLESS) {
-      // In-memory + /tmp backup (ephemeral across cold starts; OK for hackathon demo)
       const db = getMemoryDb();
       const result = fn(db);
-      db.meta.updatedAt = new Date().toISOString();
+      db.meta.updatedAt = nowIso();
       setMemoryDb(db);
       try {
         persistDb(db);
@@ -173,7 +187,7 @@ export function withDb<T>(fn: (db: DbShape) => T): T {
 
     const db = loadDbFromDisk();
     const result = fn(db);
-    db.meta.updatedAt = new Date().toISOString();
+    db.meta.updatedAt = nowIso();
     persistDb(db);
     return result;
   } finally {
@@ -181,8 +195,16 @@ export function withDb<T>(fn: (db: DbShape) => T): T {
   }
 }
 
-export function withDbRead<T>(fn: (db: DbShape) => T): T {
-  return fn(readDb());
+export async function withDb<T>(fn: (db: DbShape) => T): Promise<T> {
+  if (storeBackend() === "postgres") {
+    const url = process.env.DATABASE_URL!.trim();
+    return mutateHaebomDocument(await neonDocumentDb(url), fn);
+  }
+  return withFileDb(fn);
+}
+
+export async function withDbRead<T>(fn: (db: DbShape) => T): Promise<T> {
+  return fn(await readDb());
 }
 
 export function newId(prefix: string): string {
@@ -198,8 +220,4 @@ export function shortCode(len = 8): string {
 
 export function hashSeed(...parts: string[]): string {
   return createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 16);
-}
-
-export function nowIso(): string {
-  return new Date().toISOString();
 }
