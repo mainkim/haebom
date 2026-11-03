@@ -1,6 +1,8 @@
 :root {
   color: #191f28;
   background: #ffffff;
+  color-scheme: light;
+  touch-action: pan-x pan-y;
   font-family: "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", system-ui, sans-serif;
   --accent: #316bff;
   --ink: #191f28;
