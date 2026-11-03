@@ -96,7 +96,27 @@ export function participantCorsHeaders(origin: string | null, env?: ParticipantC
   return headers;
 }
 
-export function participantOriginAllowed(origin: string | null, env?: ParticipantCorsEnv): boolean {
+function sameOriginAsRequest(origin: string, requestUrl: string | undefined): boolean {
+  if (!requestUrl) return false;
+  try {
+    return new URL(requestUrl).origin === origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * No Origin header is allowed (non-browser clients and same-origin navigations).
+ * A browser on this deployment sends the page's own origin; that is not a Toss host,
+ * so it is accepted only when it matches the request URL. Cross-origin browsers still
+ * need the Toss allowlist. CORS response headers are unchanged.
+ */
+export function participantOriginAllowed(
+  origin: string | null,
+  env?: ParticipantCorsEnv,
+  requestUrl?: string
+): boolean {
   if (!origin) return true;
+  if (sameOriginAsRequest(origin, requestUrl)) return true;
   return originAllowed(origin, participantCorsPatterns(env), participantAppName(env));
 }

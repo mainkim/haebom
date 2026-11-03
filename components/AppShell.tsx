@@ -158,6 +158,16 @@ function ResearcherShell({ children }: { children: ReactNode }) {
             </button>
             <div className="avatar">김</div>
             <span className="user-name">김해인</span>
+            <button
+              className="outline-btn"
+              type="button"
+              onClick={async () => {
+                await fetch("/api/admin/session", { method: "DELETE" });
+                window.location.assign("/");
+              }}
+            >
+              잠그기
+            </button>
           </div>
         </header>
         <section className="content">{children}</section>
