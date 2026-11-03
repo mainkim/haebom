@@ -6,11 +6,11 @@ import { defineConfig } from "@apps-in-toss/web-framework/config";
  * https://developers-apps-in-toss.toss.im/documentation/api-and-sdk-en/integration/sdk-3.x
  *
  * appName must match the console. Override with HAEBOM_AIT_APP_NAME.
- * Existing console app is 해봄 → keep technical appName `haebom` (cannot be renamed).
- * Korean display name may be 해봄리서치; do not register a second appName.
+ * Console listing "해봄" belongs to someone else — do not reuse it.
+ * Our app: 해봄리서치 / Haebom Research / haebomresearch
  * No ads in this submission.
  */
-const appName = process.env.HAEBOM_AIT_APP_NAME?.trim() || "haebom";
+const appName = process.env.HAEBOM_AIT_APP_NAME?.trim() || "haebomresearch";
 
 export default defineConfig({
   appName,
