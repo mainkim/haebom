@@ -3,8 +3,9 @@
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { api } from "@/lib/client-api";
-import type { Measure, ParticipantRuntimePayload } from "@/lib/types";
+import { participantApi } from "@/lib/participant-client";
+import type { ParticipantView } from "@/lib/participant-view";
+import type { Measure } from "@/lib/types";
 
 function newEventId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -17,7 +18,7 @@ function ParticipateInner() {
   const params = useParams<{ code: string }>();
   const search = useSearchParams();
   const channel = (search.get("channel") as "web" | "toss_miniapp" | "demo") || "web";
-  const [runtime, setRuntime] = useState<ParticipantRuntimePayload | null>(null);
+  const [runtime, setRuntime] = useState<ParticipantView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string | number>>({});
   const [criteriaOpen, setCriteriaOpen] = useState(false);
@@ -27,7 +28,7 @@ function ParticipateInner() {
   const stimulusShownAt = useRef<number | null>(null);
 
   async function pushEvents(
-    rt: ParticipantRuntimePayload,
+    rt: ParticipantView,
     partials: Array<{
       eventType: string;
       stepId?: string;
@@ -40,11 +41,6 @@ function ParticipateInner() {
       seq.current += 1;
       return {
         eventId: newEventId(),
-        studyId: rt.studyId,
-        studyVersionId: rt.studyVersionId,
-        participantId: rt.participantId,
-        sessionId: rt.sessionId,
-        conditionId: rt.conditionId,
         stepId: p.stepId,
         screenId: p.screenId,
         objectId: p.objectId,
@@ -55,7 +51,7 @@ function ParticipateInner() {
         payload: p.payload
       };
     });
-    await api("events", { events });
+    await participantApi("events", { participantId: rt.participantId, events });
   }
 
   useEffect(() => {
@@ -64,19 +60,19 @@ function ParticipateInner() {
       try {
         const storageKey = `haebom_participant_${params.code}`;
         const existingId = typeof window !== "undefined" ? sessionStorage.getItem(storageKey) : null;
-        let joined: ParticipantRuntimePayload;
+        let joined: ParticipantView;
         if (existingId) {
           try {
-            joined = await api<ParticipantRuntimePayload>("runtime", { participantId: existingId });
+            joined = await participantApi<ParticipantView>("runtime", { participantId: existingId });
           } catch {
-            joined = await api<ParticipantRuntimePayload>("join", {
+            joined = await participantApi<ParticipantView>("join", {
               joinCode: params.code,
               channel
             });
             sessionStorage.setItem(storageKey, joined.participantId);
           }
         } else {
-          joined = await api<ParticipantRuntimePayload>("join", {
+          joined = await participantApi<ParticipantView>("join", {
             joinCode: params.code,
             channel
           });
@@ -144,7 +140,7 @@ function ParticipateInner() {
     setBusy(true);
     try {
       await pushEvents(runtime, [{ eventType: "step_submit", stepId: step?.id, screenId: "consent" }]);
-      const next = await api<ParticipantRuntimePayload>("consent", { participantId: runtime.participantId });
+      const next = await participantApi<ParticipantView>("consent", { participantId: runtime.participantId });
       setRuntime(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : "실패");
@@ -168,7 +164,7 @@ function ParticipateInner() {
         { eventType: "survey_submit", stepId: step.id, screenId: step.stage || "survey" },
         { eventType: "step_submit", stepId: step.id }
       ]);
-      const next = await api<ParticipantRuntimePayload>("submit_step", {
+      const next = await participantApi<ParticipantView>("submit_step", {
         participantId: runtime.participantId,
         stepId: step.id,
         responses: measureIds.map((id) => ({ measureId: id, value: answers[id], responseTimeMs: 1200 }))
@@ -211,7 +207,7 @@ function ParticipateInner() {
       }
       evs.push({ eventType: "step_submit", stepId: step.id, screenId: "stimulus" });
       await pushEvents(runtime, evs);
-      const next = await api<ParticipantRuntimePayload>("submit_step", {
+      const next = await participantApi<ParticipantView>("submit_step", {
         participantId: runtime.participantId,
         stepId: step.id,
         criteriaOpened: criteriaOpen,
@@ -235,7 +231,7 @@ function ParticipateInner() {
         { eventType: "experiment_complete", stepId: step.id, screenId: "complete" }
       ]);
       if (runtime.status !== "completed") {
-        const next = await api<ParticipantRuntimePayload>("submit_step", {
+        const next = await participantApi<ParticipantView>("submit_step", {
           participantId: runtime.participantId,
           stepId: step.id
         });
@@ -460,7 +456,7 @@ function ParticipateInner() {
                     await pushEvents(runtime, [
                       { eventType: "experiment_complete", stepId: step.id, screenId: "complete" }
                     ]);
-                    const next = await api<ParticipantRuntimePayload>("submit_step", {
+                    const next = await participantApi<ParticipantView>("submit_step", {
                       participantId: runtime.participantId,
                       stepId: step.id
                     });

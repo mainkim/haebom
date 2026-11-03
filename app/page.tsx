@@ -64,7 +64,7 @@ export default function HomePage() {
 
   async function refresh() {
     const data = await listStudiesApi();
-    setStudies(data.studies ?? []);
+    setStudies((data.studies as StudyRow[] | undefined) ?? []);
   }
 
   useEffect(() => {

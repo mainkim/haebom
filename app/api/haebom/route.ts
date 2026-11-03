@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { authorizeAdmin } from "@/lib/admin-auth";
 import {
   applyDemoFixes,
   applyGroundedStimuli,
@@ -33,7 +34,23 @@ import { buildExports, buildXlsxBase64 } from "@/lib/export";
 import { compareConditions, runQa } from "@/lib/qa";
 import { DEMO_PROMPT } from "@/lib/ai/generator";
 
-export async function GET() {
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function unauthorized(req: Request) {
+  const decision = authorizeAdmin({
+    cookieHeader: req.headers.get("cookie"),
+    authorization: req.headers.get("authorization")
+  });
+  if (decision.ok) return null;
+  const res = NextResponse.json({ error: decision.error }, { status: decision.status });
+  res.headers.set("Cache-Control", "no-store");
+  return res;
+}
+
+export async function GET(req: Request) {
+  const denied = unauthorized(req);
+  if (denied) return denied;
   const studies = await listStudies();
   const rows = await Promise.all(
     studies.map(async (s) => {
@@ -54,6 +71,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const denied = unauthorized(req);
+  if (denied) return denied;
   const body = await req.json();
   const action = body.action as string;
 

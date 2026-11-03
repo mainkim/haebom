@@ -2,6 +2,8 @@
 
 ## Live demo
 
+연구자 워크스페이스는 서버 환경 변수 `HAEBOM_ADMIN_KEY`로 잠깁니다. 참가자는 토스 미니앱 또는 `/p/{joinCode}`로 들어가며, 그 경로는 연구자 키를 쓰지 않습니다.
+
 - Production: https://haebomresearch.vercel.app
 - 60초 시드: https://haebomresearch.vercel.app/demo
 - 요금 목업: https://haebomresearch.vercel.app/pricing

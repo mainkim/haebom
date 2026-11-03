@@ -40,7 +40,7 @@ function participantId(value: unknown): string {
 export async function handleParticipantRequest(req: Request): Promise<Response> {
   const origin = req.headers.get("origin");
   const headers = participantCorsHeaders(origin);
-  const allowed = participantOriginAllowed(origin);
+  const allowed = participantOriginAllowed(origin, undefined, req.url);
 
   if (req.method === "OPTIONS") {
     if (!allowed) return json({ error: "이 출처에서는 참여할 수 없습니다." }, 403, headers);
