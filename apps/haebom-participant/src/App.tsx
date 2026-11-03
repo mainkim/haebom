@@ -1,7 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { loadParticipantView, participantApi } from "./api";
-import { SESSION_JOIN_CODE_KEY, joinCodeFromLocation, normalizeJoinCode, readStoredJoinCode } from "./join-code";
+import { joinCodeFromLocation, normalizeJoinCode } from "./join-code";
 import { anonymousSessionAdapter } from "./session/adapter";
+import { saveAnonymousKey, withDeadline } from "./session/anonymous-key";
+import {
+  PROGRESS_STORAGE_KEY,
+  emptyProgress,
+  localProgressStore,
+  openProgressStore,
+  rememberJoinCode,
+  rememberParticipant,
+  restoreProgress,
+  writeProgress,
+  type ParticipantProgress,
+  type ProgressStore
+} from "./session/progress";
+import { readTossAnonymousKey, tossNativeProgressStore } from "./session/toss-bridge";
 import type { ParticipantView, PublicMeasure } from "./types";
 
 function eventId() {
@@ -14,8 +28,11 @@ export function App() {
     () => joinCodeFromLocation({ pathname: window.location.pathname, search: window.location.search }),
     []
   );
-  const [code, setCode] = useState<string | null>(() => locationCode ?? readStoredJoinCode(sessionStorage));
-  const [draft, setDraft] = useState(() => locationCode ?? readStoredJoinCode(sessionStorage) ?? "");
+  const [ready, setReady] = useState(false);
+  const [code, setCode] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const storeRef = useRef<ProgressStore | null>(null);
+  const progressRef = useRef<ParticipantProgress>(emptyProgress());
   const [joinAttempt, setJoinAttempt] = useState(0);
   const [view, setView] = useState<ParticipantView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,27 +65,67 @@ export function App() {
   }
 
   useEffect(() => {
-    if (!code) return;
     let cancelled = false;
-    sessionStorage.setItem(SESSION_JOIN_CODE_KEY, code);
+    const native = tossNativeProgressStore();
+    const local = localProgressStore(window.localStorage);
+    const store = openProgressStore({ local, native });
+    storeRef.current = store;
     (async () => {
-      const session = await anonymousSessionAdapter.current();
-      if (session.kind !== "anonymous" || cancelled) return;
       try {
-        const storageKey = `haebom_participant_${code}`;
-        const existing = sessionStorage.getItem(storageKey);
+        const progress = await restoreProgress({
+          local,
+          session: window.sessionStorage,
+          readNative: native ? () => native.getItem(PROGRESS_STORAGE_KEY) : undefined
+        });
+        await writeProgress(store, progress);
+        const keyPromise = readTossAnonymousKey();
+        const hash = await withDeadline(keyPromise, 1500, null);
+        if (hash) await saveAnonymousKey(store, hash);
+        else void keyPromise.then((late) => (late ? saveAnonymousKey(store, late) : undefined));
+        if (cancelled) return;
+        progressRef.current = progress;
+        const initial = locationCode ?? progress.joinCode;
+        setDraft(initial ?? "");
+        setCode(initial);
+      } catch {
+        if (cancelled) return;
+        setDraft(locationCode ?? "");
+        setCode(locationCode);
+      } finally {
+        if (!cancelled) setReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [locationCode]);
+
+  useEffect(() => {
+    if (!ready || !code) return;
+    let cancelled = false;
+    const store = storeRef.current;
+    (async () => {
+      try {
+        const session = await anonymousSessionAdapter.current();
+        if (session.kind !== "anonymous" || cancelled) return;
+        let progress = rememberJoinCode(progressRef.current, code);
+        progressRef.current = progress;
+        if (store) await writeProgress(store, progress);
+        const activeCode = progress.joinCode ?? code;
+        const existing = progress.participantIds[activeCode];
         let next: ParticipantView;
         if (existing) {
           try {
             next = await loadParticipantView("runtime", { participantId: existing });
           } catch {
-            next = await loadParticipantView("join", { joinCode: code, channel: "toss_miniapp" });
-            sessionStorage.setItem(storageKey, next.participantId);
+            next = await loadParticipantView("join", { joinCode: activeCode, channel: "toss_miniapp" });
           }
         } else {
-          next = await loadParticipantView("join", { joinCode: code, channel: "toss_miniapp" });
-          sessionStorage.setItem(storageKey, next.participantId);
+          next = await loadParticipantView("join", { joinCode: activeCode, channel: "toss_miniapp" });
         }
+        progress = rememberParticipant(progress, activeCode, next.participantId);
+        progressRef.current = progress;
+        if (store) await writeProgress(store, progress);
         if (cancelled) return;
         setView(next);
         setError(null);
@@ -81,7 +138,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [code, joinAttempt]);
+  }, [code, joinAttempt, ready]);
 
   function onJoinSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -270,6 +327,17 @@ export function App() {
     );
   }
 
+  if (!ready) {
+    return (
+      <main className="app" aria-busy="true">
+        <p className="brand">해봄리서치</p>
+        <p className="hint" role="status">
+          참여 준비 중
+        </p>
+      </main>
+    );
+  }
+
   if (!locationCode && !view) {
     if (code && !error) {
       return (
@@ -321,7 +389,7 @@ export function App() {
   const progress = view && view.flow.length > 1 ? Math.round((stepIndex / (view.flow.length - 1)) * 100) : 0;
 
   return (
-    <main className="app">
+    <main className="app" aria-busy={busy || undefined}>
       <p className="brand">해봄리서치</p>
       {!view && !error ? <p className="hint">참여 준비 중</p> : null}
       {error ? (
@@ -342,6 +410,11 @@ export function App() {
         </>
       ) : null}
 
+      {busy ? (
+        <p className="hint" role="status">
+          처리 중
+        </p>
+      ) : null}
       {view && step ? (
         <section className="card" aria-live="polite">
           {step.type === "consent" ? (
