@@ -1,15 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { loadParticipantView, participantApi } from "./api";
+import { SESSION_JOIN_CODE_KEY, joinCodeFromLocation, normalizeJoinCode, readStoredJoinCode } from "./join-code";
 import { anonymousSessionAdapter } from "./session/adapter";
 import type { ParticipantView, PublicMeasure } from "./types";
-
-function joinCodeFromPath(): string | null {
-  const parts = window.location.pathname.split("/").filter(Boolean);
-  const marker = parts.indexOf("p");
-  const code = marker >= 0 ? parts[marker + 1] : "";
-  if (!code || !/^[a-z0-9]{4,16}$/i.test(code)) return null;
-  return code;
-}
 
 function eventId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return `evt_${crypto.randomUUID()}`;
@@ -17,7 +10,13 @@ function eventId() {
 }
 
 export function App() {
-  const code = useMemo(() => joinCodeFromPath(), []);
+  const locationCode = useMemo(
+    () => joinCodeFromLocation({ pathname: window.location.pathname, search: window.location.search }),
+    []
+  );
+  const [code, setCode] = useState<string | null>(() => locationCode ?? readStoredJoinCode(sessionStorage));
+  const [draft, setDraft] = useState(() => locationCode ?? readStoredJoinCode(sessionStorage) ?? "");
+  const [joinAttempt, setJoinAttempt] = useState(0);
   const [view, setView] = useState<ParticipantView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string | number>>({});
@@ -51,6 +50,7 @@ export function App() {
   useEffect(() => {
     if (!code) return;
     let cancelled = false;
+    sessionStorage.setItem(SESSION_JOIN_CODE_KEY, code);
     (async () => {
       const session = await anonymousSessionAdapter.current();
       if (session.kind !== "anonymous" || cancelled) return;
@@ -71,6 +71,7 @@ export function App() {
         }
         if (cancelled) return;
         setView(next);
+        setError(null);
         started.current = Date.now();
         await track(next, [{ eventType: "screen_view", screenId: "join", stepId: next.currentStepId }]);
       } catch (err) {
@@ -80,7 +81,21 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [code]);
+  }, [code, joinAttempt]);
+
+  function onJoinSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const next = normalizeJoinCode(draft);
+    if (!next) {
+      setError("참여 코드는 영문과 숫자 4~16자입니다.");
+      return;
+    }
+    setDraft(next);
+    setError(null);
+    setView(null);
+    setCode(next);
+    setJoinAttempt((attempt) => attempt + 1);
+  }
 
   const step = view?.flow.find((item) => item.id === view.currentStepId) ?? null;
   const stepIndex = view ? Math.max(0, view.flow.findIndex((item) => item.id === view.currentStepId)) : 0;
@@ -255,12 +270,50 @@ export function App() {
     );
   }
 
-  if (!code) {
+  if (!locationCode && !view) {
+    if (code && !error) {
+      return (
+        <main className="app">
+          <p className="brand">해봄리서치</p>
+          <p className="hint">참여 준비 중</p>
+        </main>
+      );
+    }
     return (
       <main className="app">
         <p className="brand">해봄리서치</p>
-        <h1>참여 링크를 확인해 주세요</h1>
-        <p className="hint">주소의 참여 코드가 없거나 형식이 맞지 않습니다.</p>
+        <h1>
+          <label htmlFor="join-code">참여 코드</label>
+        </h1>
+        <p id="join-code-hint" className="hint">
+          연구자에게 받은 참여 코드를 입력해 주세요.
+        </p>
+        <form className="join-form" onSubmit={onJoinSubmit} noValidate>
+          <input
+            id="join-code"
+            name="joinCode"
+            value={draft}
+            autoFocus
+            onChange={(event) => setDraft(event.target.value)}
+            aria-describedby={error ? "join-code-hint join-code-error" : "join-code-hint"}
+            aria-invalid={error ? true : undefined}
+            autoCapitalize="characters"
+            autoCorrect="off"
+            autoComplete="off"
+            spellCheck={false}
+            enterKeyHint="go"
+            inputMode="text"
+            maxLength={24}
+          />
+          {error ? (
+            <p id="join-code-error" className="error" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <button className="primary" type="submit">
+            참여 시작
+          </button>
+        </form>
       </main>
     );
   }
